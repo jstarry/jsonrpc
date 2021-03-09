@@ -81,8 +81,13 @@ impl Session {
 	}
 
 	/// Removes existing subscription.
-	fn remove_subscription(&self, name: &str, id: &SubscriptionId) {
-		self.active_subscriptions.lock().remove(&(id.clone(), name.into()));
+	fn remove_subscription(&self, name: &str, id: &SubscriptionId) -> bool {
+		if let Some(remove) = self.active_subscriptions.lock().remove(&(id.clone(), name.into())) {
+			remove(id.clone());
+			true
+		} else {
+			false
+		}
 	}
 }
 
@@ -335,8 +340,11 @@ where
 		};
 		match (meta.session(), id) {
 			(Some(session), Some(id)) => {
-				session.remove_subscription(&self.notification, &id);
-				Box::pin(self.unsubscribe.call(id, Some(meta)))
+				if session.remove_subscription(&self.notification, &id) {
+					Box::pin(self.unsubscribe.call(id, Some(meta)))
+				} else {
+					Box::pin(future::err(core::Error::invalid_params("Invalid subscription id.")))
+				}
 			}
 			(Some(_), None) => Box::pin(future::err(core::Error::invalid_params("Expected subscription id."))),
 			_ => Box::pin(future::err(subscriptions_unavailable())),
